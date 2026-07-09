@@ -19,7 +19,7 @@ async function crearUsuarios() {
       rol: 'CLIENTE'
     }
   ];
-
+//d
   for (const usuario of usuarios) {
     const passwordEncriptada = await bcrypt.hash(usuario.password, 10);
 
