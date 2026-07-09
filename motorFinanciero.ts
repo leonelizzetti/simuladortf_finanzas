@@ -3,7 +3,7 @@ export interface InputSimulacion {
   porcCuotaInicial: number;
   tipoTasa: 'Nominal' | 'Efectiva';
   tasaInteres: number;
-  capTasa: number;
+  capTasa: number; // Ahora representará días (ej. 1 para diaria, 30 para mensual)
   plazoMeses: number;
   porcCuotaFinal: number;
   tasaDesgravamen: number;
@@ -23,6 +23,7 @@ export interface DetalleMes {
   seguroVehicular: number;
   saldoFinal: number;
   tipoGracia: 'sin gracia' | 'total' | 'parcial';
+  flujoCajaNeto: number; 
 }
 
 export interface ResultadoSimulacion {
@@ -90,7 +91,8 @@ export const calcularSmartBuy = (input: InputSimulacion): ResultadoSimulacion =>
 
   let tem = 0;
   if (tipoTasa === 'Nominal') {
-    tem = Math.pow(1 + (tasaInteres / (360 / capTasa)), 30 / capTasa) - 1;
+    const m = 360 / capTasa; 
+    tem = Math.pow(1 + (tasaInteres / m), 30 / capTasa) - 1;
   } else {
     tem = Math.pow(1 + tasaInteres, 30 / 360) - 1;
   }
@@ -104,15 +106,13 @@ export const calcularSmartBuy = (input: InputSimulacion): ResultadoSimulacion =>
   let mesActual = 1;
   let interesTotal = 0;
 
-for (let i = 0; i < mesesGraciaTo; i++) {
+  for (let i = 0; i < mesesGraciaTo; i++) {
     const saldoInicial = saldoActual;
     const interes = saldoInicial * tem;
     const seguroDesgravamen = saldoInicial * tasaDesgravamen;
     
     interesTotal += interes;
-    
     const cuotaTotal = 0; 
-    
     saldoActual = saldoInicial + interes;
 
     cronograma.push({
@@ -125,8 +125,9 @@ for (let i = 0; i < mesesGraciaTo; i++) {
       seguroVehicular: montoSeguroVehic,
       saldoFinal: saldoActual,
       tipoGracia: 'total',
+      flujoCajaNeto: cuotaTotal
     });
-    flujoDeCaja.push(cuotaTotal); // Ahora esto empujará 0.00 al flujo
+    flujoDeCaja.push(cuotaTotal); 
     mesActual++;
   }
 
@@ -148,6 +149,7 @@ for (let i = 0; i < mesesGraciaTo; i++) {
       seguroVehicular: montoSeguroVehic,
       saldoFinal: saldoActual,
       tipoGracia: 'parcial',
+      flujoCajaNeto: cuotaTotal
     });
     flujoDeCaja.push(cuotaTotal);
     mesActual++;
@@ -164,30 +166,33 @@ for (let i = 0; i < mesesGraciaTo; i++) {
     
     interesTotal += interes;
     const esUltimoMes = (mesActual === plazoMeses);
-    const cuotaPrestamo = esUltimoMes ? cuotaMensualBase + montoCuotaFin : cuotaMensualBase;
+    
+    const cuotaPrestamo = cuotaMensualBase;
     
     const amortizacion = cuotaPrestamo - interes;
-    const cuotaTotal = cuotaPrestamo + seguroDesgravamen + montoSeguroVehic;
+    const cuotaTotalPagada = cuotaPrestamo + seguroDesgravamen + montoSeguroVehic;
     saldoActual = saldoInicial - amortizacion;
+
+    const flujoCajaNeto = esUltimoMes ? cuotaTotalPagada + montoCuotaFin : cuotaTotalPagada;
 
     cronograma.push({
       numeroCuota: mesActual,
       saldoInicial,
       interes,
-      cuota: cuotaMensualBase,
+      cuota: cuotaPrestamo,
       amortizacion,
       seguroDesgravamen,
       seguroVehicular: montoSeguroVehic,
-      saldoFinal: esUltimoMes ? 0 : saldoActual,
+      saldoFinal: saldoActual, 
       tipoGracia: 'sin gracia',
+      flujoCajaNeto: flujoCajaNeto
     });
-    flujoDeCaja.push(cuotaTotal);
+    flujoDeCaja.push(flujoCajaNeto);
     mesActual++;
   }
 
   const tirMensual = calcularTIR(flujoDeCaja, plazoMeses);
   const tcea = Math.pow(1 + tirMensual, 12) - 1;
-  
   const van = -calcularVAN(flujoDeCaja, plazoMeses, cokMensual);
 
   return {

@@ -38,7 +38,6 @@ export const generarSimulacion = async (req: Request, res: Response) => {
 
     const tipoGracia = obtenerTipoGracia(datosEntrada);
 
-    // Usamos "Dolares" sin tilde porque así está configurado el ENUM en MySQL
     const moneda = cuerpo.moneda === 'Soles' ? 'Soles' : 'Dolares';
 
     await connection.beginTransaction();
@@ -107,55 +106,45 @@ export const generarSimulacion = async (req: Request, res: Response) => {
 
     const idSimulacion = insertSimulacion.insertId;
 
-    for (const fila of resultado.cronograma) {
-      const segurosTotal = fila.seguroDesgravamen + fila.seguroVehicular;
+  for (const fila of resultado.cronograma) {
+        const segurosTotal = fila.seguroDesgravamen + fila.seguroVehicular;
+        // Ya no recalculamos nada, usamos los valores exactos que nos dio el motor Financiero
+        const cuotaTotal = fila.cuota + segurosTotal;
 
-      let cuotaPrestamo = 0;
-
-      if (fila.tipoGracia === 'total') {
-        cuotaPrestamo = 0;
-      } else if (fila.tipoGracia === 'parcial') {
-        cuotaPrestamo = fila.interes;
-      } else {
-        cuotaPrestamo = fila.interes + fila.amortizacion;
+        await connection.execute(
+          `
+          INSERT INTO cronograma_pago (
+            id_simulacion,
+            num_cuota,
+            saldo_inicial,
+            interes,
+            cuota,
+            amortizacion,
+            seguro_desgravamen,
+            seguro_vehicular,
+            seguros_total,
+            saldo_final,
+            flujo_caja_neto,
+            tipo_gracia
+          )
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          `,
+          [
+            idSimulacion,
+            numero(fila.numeroCuota),
+            numero(fila.saldoInicial),
+            numero(fila.interes),
+            numero(cuotaTotal),
+            numero(fila.amortizacion),
+            numero(fila.seguroDesgravamen),
+            numero(fila.seguroVehicular),
+            numero(segurosTotal),
+            numero(fila.saldoFinal),
+            numero(fila.flujoCajaNeto), 
+            fila.tipoGracia
+          ]
+        );
       }
-
-      const cuotaTotal = cuotaPrestamo + segurosTotal;
-
-      await connection.execute(
-        `
-        INSERT INTO cronograma_pago (
-          id_simulacion,
-          num_cuota,
-          saldo_inicial,
-          interes,
-          cuota,
-          amortizacion,
-          seguro_desgravamen,
-          seguro_vehicular,
-          seguros_total,
-          saldo_final,
-          flujo_caja_neto,
-          tipo_gracia
-        )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        `,
-        [
-          idSimulacion,
-          numero(fila.numeroCuota),
-          numero(fila.saldoInicial),
-          numero(fila.interes),
-          numero(cuotaTotal),
-          numero(fila.amortizacion),
-          numero(fila.seguroDesgravamen),
-          numero(fila.seguroVehicular),
-          numero(segurosTotal),
-          numero(fila.saldoFinal),
-          numero(cuotaTotal),
-          fila.tipoGracia
-        ]
-      );
-    }
 
     await connection.commit();
 
@@ -178,7 +167,8 @@ export const generarSimulacion = async (req: Request, res: Response) => {
         van: resultado.van,
         tir: resultado.tir,
         totalCuotas: resultado.cronograma.length
-      }
+      },
+      cronograma: resultado.cronograma 
     });
 
   } catch (error) {

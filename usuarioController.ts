@@ -2,62 +2,109 @@ import { Request, Response } from 'express';
 import * as bcrypt from 'bcrypt';
 import { pool } from './db';
 
+export const registrarUsuario = async (req: Request, res: Response) => {
+    let connection;
+
+    try {
+        const { username, password, nombres, apellidos, correo, telefono, rol, estado } = req.body;
+
+        if (!username || !password || !nombres || !apellidos || !correo || !rol) {
+            return res.status(400).json({
+                exito: false,
+                mensaje: 'Faltan datos obligatorios'
+            });
+        }
+
+        connection = await pool.getConnection();
+
+        const [existingUser]: any = await connection.execute(
+            `SELECT id_usuario FROM usuario WHERE username = ?`,
+            [username]
+        );
+
+        if (existingUser.length > 0) {
+            return res.status(400).json({ 
+                exito: false, 
+                mensaje: 'El usuario ya existe' 
+            });
+        }
+
+        const salt = await bcrypt.genSalt(10);
+        const hashedPassword = await bcrypt.hash(password, salt);
+        const estadoFinal = estado || 'ACTIVO';
+
+        await connection.execute(
+            `INSERT INTO usuario (username, password, nombres, apellidos, correo, telefono, rol, estado) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+            [username, hashedPassword, nombres, apellidos, correo, telefono, rol, estadoFinal]
+        );
+
+        return res.status(201).json({
+            exito: true,
+            mensaje: 'Cuenta creada exitosamente'
+        });
+
+    } catch (error) {
+        console.error(error);
+        return res.status(500).json({
+            exito: false,
+            mensaje: 'Error al procesar el registro'
+        });
+    } finally {
+        if (connection) {
+            connection.release();
+        }
+    }
+};
+
 export const registrarAsesor = async (req: Request, res: Response) => {
-  const connection = await pool.getConnection();
+    let connection;
 
-  try {
-    const { username, password } = req.body;
+    try {
+        const { username, password, nombres, apellidos, correo, telefono } = req.body;
 
-    if (!username || !password) {
-      return res.status(400).json({
-        exito: false,
-        mensaje: 'Debe ingresar username y password'
-      });
+        if (!username || !password || !nombres || !apellidos || !correo) {
+            return res.status(400).json({
+                exito: false,
+                mensaje: 'Faltan datos obligatorios'
+            });
+        }
+
+        connection = await pool.getConnection();
+
+        const [existingUser]: any = await connection.execute(
+            `SELECT id_usuario FROM usuario WHERE username = ?`,
+            [username]
+        );
+
+        if (existingUser.length > 0) {
+            return res.status(400).json({ 
+                exito: false, 
+                mensaje: 'El usuario ya existe' 
+            });
+        }
+
+        const salt = await bcrypt.genSalt(10);
+        const hashedPassword = await bcrypt.hash(password, salt);
+
+        await connection.execute(
+            `INSERT INTO usuario (username, password, nombres, apellidos, correo, telefono, rol, estado) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+            [username, hashedPassword, nombres, apellidos, correo, telefono, 'ASESOR', 'ACTIVO']
+        );
+
+        return res.status(201).json({
+            exito: true,
+            mensaje: 'Asesor creado exitosamente'
+        });
+
+    } catch (error) {
+        console.error(error);
+        return res.status(500).json({
+            exito: false,
+            mensaje: 'Error al procesar el registro de asesor'
+        });
+    } finally {
+        if (connection) {
+            connection.release();
+        }
     }
-
-    const passwordEncriptada = await bcrypt.hash(password, 10);
-
-    const [resultado]: any = await connection.execute(
-      `
-      INSERT INTO usuario (
-        username,
-        password,
-        rol,
-        estado
-      )
-      VALUES (?, ?, 'ASESOR', 'ACTIVO')
-      `,
-      [username, passwordEncriptada]
-    );
-
-    return res.status(201).json({
-      exito: true,
-      mensaje: 'Asesor registrado correctamente',
-      asesor: {
-        idUsuario: resultado.insertId,
-        username,
-        rol: 'ASESOR',
-        estado: 'ACTIVO'
-      }
-    });
-
-  } catch (error: any) {
-    console.error('Error al registrar asesor:', error);
-
-    if (error.code === 'ER_DUP_ENTRY') {
-      return res.status(409).json({
-        exito: false,
-        mensaje: 'El username ya existe'
-      });
-    }
-
-    return res.status(500).json({
-      exito: false,
-      mensaje: 'Error al registrar asesor',
-      error: error instanceof Error ? error.message : 'Error desconocido'
-    });
-
-  } finally {
-    connection.release();
-  }
 };

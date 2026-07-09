@@ -2,19 +2,21 @@ import { Request, Response } from 'express';
 import * as bcrypt from 'bcrypt';
 import * as jwt from 'jsonwebtoken';
 import { pool } from './db';
-import axios from 'axios'; // Importamos axios
+import axios from 'axios';
 
 export const login = async (req: Request, res: Response) => {
   let connection;
 
   try {
-    const { username, password, recaptchaToken } = req.body; 
-    if (!username || !password || !recaptchaToken) {
+    const { username, password, rol, recaptchaToken } = req.body; 
+    
+    if (!username || !password || !rol || !recaptchaToken) {
       return res.status(400).json({
         exito: false,
-        mensaje: 'Debe ingresar usuario, contraseña y completar el captcha'
+        mensaje: 'Debe ingresar usuario/correo, contraseña, rol y completar el captcha'
       });
     }
+    
     const secretKey = process.env.RECAPTCHA_SECRET_KEY;
     const googleResponse = await axios.post(`https://www.google.com/recaptcha/api/siteverify`, null, {
         params: {
@@ -23,7 +25,7 @@ export const login = async (req: Request, res: Response) => {
         }
     });
 
-    if (!googleResponse.data.success || googleResponse.data.score < 0.5) {
+    if (!googleResponse.data.success) {
         return res.status(403).json({ 
             exito: false, 
             mensaje: "Acceso denegado: Bot detectado o validación fallida." 
@@ -33,12 +35,14 @@ export const login = async (req: Request, res: Response) => {
     connection = await pool.getConnection();
 
     const [usuarios]: any = await connection.execute(
-      `SELECT id_usuario, username, password, rol, estado FROM usuario WHERE username = ?`,
-      [username]
+      `SELECT id_usuario, username, correo, password, nombres, apellidos, rol, estado 
+       FROM usuario 
+       WHERE (username = ? OR correo = ?) AND rol = ?`,
+      [username, username, rol.toUpperCase()]
     );
 
     if (usuarios.length === 0) {
-      return res.status(401).json({ exito: false, mensaje: 'Usuario o contraseña incorrectos' });
+      return res.status(401).json({ exito: false, mensaje: 'Credenciales o rol incorrectos' });
     }
 
     const usuario = usuarios[0];
@@ -50,7 +54,7 @@ export const login = async (req: Request, res: Response) => {
     const passwordCorrecto = await bcrypt.compare(password, usuario.password);
 
     if (!passwordCorrecto) {
-      return res.status(401).json({ exito: false, mensaje: 'Usuario o contraseña incorrectos' });
+      return res.status(401).json({ exito: false, mensaje: 'Credenciales o rol incorrectos' });
     }
 
     const payload = {
@@ -69,6 +73,9 @@ export const login = async (req: Request, res: Response) => {
       usuario: {
         idUsuario: usuario.id_usuario,
         username: usuario.username,
+        correo: usuario.correo,
+        nombres: usuario.nombres,
+        apellidos: usuario.apellidos,
         rol: usuario.rol
       },
       token

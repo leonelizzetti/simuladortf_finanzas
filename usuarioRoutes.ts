@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { registrarAsesor } from './usuarioController';
+import { registrarAsesor, registrarUsuario } from './usuarioController';
 import { verificarToken, verificarRol } from './authMiddleware';
 
 const router = Router();
@@ -10,5 +10,7 @@ router.post(
   verificarRol('ADMINISTRADOR'),
   registrarAsesor
 );
+
+router.post('/usuarios', registrarUsuario);
 
 export default router;
