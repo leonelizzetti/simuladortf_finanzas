@@ -28,6 +28,7 @@ export const generarSimulacion = async (req: Request, res: Response) => {
     const usuario = (req as any).usuario;
 
     if (!usuario) {
+      connection.release();
       return res.status(401).json({
         exito: false,
         mensaje: 'Usuario no autenticado'
@@ -36,8 +37,27 @@ export const generarSimulacion = async (req: Request, res: Response) => {
 
     const resultado = calcularSmartBuy(datosEntrada);
 
-    const tipoGracia = obtenerTipoGracia(datosEntrada);
+    if (cuerpo.guardar !== true) {
+      connection.release();
+      return res.status(200).json({
+        exito: true,
+        mensaje: 'Simulación calculada temporalmente',
+        resumen: {
+          montoPrestamo: resultado.montoPrestamo,
+          montoCuotaFin: resultado.montoCuotaFin,
+          tem: resultado.tem,
+          cuotaMensual: resultado.cuotaMensual,
+          interesTotal: resultado.interesTotal,
+          tcea: resultado.tcea,
+          van: resultado.van,
+          tir: resultado.tir,
+          totalCuotas: resultado.cronograma.length
+        },
+        cronograma: resultado.cronograma
+      });
+    }
 
+    const tipoGracia = obtenerTipoGracia(datosEntrada);
     const moneda = cuerpo.moneda === 'Soles' ? 'Soles' : 'Dolares';
 
     await connection.beginTransaction();
@@ -45,143 +65,64 @@ export const generarSimulacion = async (req: Request, res: Response) => {
     const [insertSimulacion]: any = await connection.execute(
       `
       INSERT INTO simulacion_credito (
-        id_usuario,
-        moneda,
-        precio_vehiculo,
-        porc_cuota_inicial,
-        monto_financiar,
-        porc_cuota_final,
-        monto_cuota_final,
-        tipo_tasa,
-        tasa_interes,
-        periodo_capitalizacion,
-        plazo_meses,
-        tipo_gracia,
-        meses_gracia_total,
-        meses_gracia_parcial,
-        tasa_desgravamen,
-        seguro_vehicular,
-        cok_anual,
-        tipo_cambio,
-        tem,
-        monto_cuota,
-        interes_total,
-        tcea,
-        van,
-        tir
+        id_usuario, moneda, precio_vehiculo, porc_cuota_inicial, monto_financiar,
+        porc_cuota_final, monto_cuota_final, tipo_tasa, tasa_interes, periodo_capitalizacion,
+        plazo_meses, tipo_gracia, meses_gracia_total, meses_gracia_parcial, tasa_desgravamen,
+        seguro_vehicular, cok_anual, tipo_cambio, tem, monto_cuota, interes_total, tcea, van, tir
       )
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `,
       [
-        usuario.idUsuario,
-        moneda,
-        numero(datosEntrada.precioVehiculo),
-        numero(datosEntrada.porcCuotaInicial),
-        numero(resultado.montoPrestamo),
-        numero(datosEntrada.porcCuotaFinal),
-        numero(resultado.montoCuotaFin),
-
-        datosEntrada.tipoTasa,
-        numero(datosEntrada.tasaInteres),
-        numero(datosEntrada.capTasa),
-        numero(datosEntrada.plazoMeses),
-
-        tipoGracia,
-        numero(datosEntrada.mesesGraciaTo),
-        numero(datosEntrada.mesesGraciaPa),
-
-        numero(datosEntrada.tasaDesgravamen),
-        numero(datosEntrada.montoSeguroVehic),
-        numero(datosEntrada.cokAnual),
-        numero(cuerpo.tipoCambio ?? 3.75),
-
-        numero(resultado.tem),
-        numero(resultado.cuotaMensual),
-        numero(resultado.interesTotal),
-        numero(resultado.tcea),
-        numero(resultado.van),
-        numero(resultado.tir)
+        usuario.idUsuario, moneda, numero(datosEntrada.precioVehiculo), numero(datosEntrada.porcCuotaInicial),
+        numero(resultado.montoPrestamo), numero(datosEntrada.porcCuotaFinal), numero(resultado.montoCuotaFin),
+        datosEntrada.tipoTasa, numero(datosEntrada.tasaInteres), numero(datosEntrada.capTasa),
+        numero(datosEntrada.plazoMeses), tipoGracia, numero(datosEntrada.mesesGraciaTo),
+        numero(datosEntrada.mesesGraciaPa), numero(datosEntrada.tasaDesgravamen),
+        numero(datosEntrada.montoSeguroVehic), numero(datosEntrada.cokAnual), numero(cuerpo.tipoCambio ?? 3.75),
+        numero(resultado.tem), numero(resultado.cuotaMensual), numero(resultado.interesTotal),
+        numero(resultado.tcea), numero(resultado.van), numero(resultado.tir)
       ]
     );
 
     const idSimulacion = insertSimulacion.insertId;
 
-  for (const fila of resultado.cronograma) {
-        const segurosTotal = fila.seguroDesgravamen + fila.seguroVehicular;
-        // Ya no recalculamos nada, usamos los valores exactos que nos dio el motor Financiero
-        const cuotaTotal = fila.cuota + segurosTotal;
+    for (const fila of resultado.cronograma) {
+      const segurosTotal = fila.seguroDesgravamen + fila.seguroVehicular;
+      const cuotaTotal = fila.cuota + segurosTotal;
 
-        await connection.execute(
-          `
-          INSERT INTO cronograma_pago (
-            id_simulacion,
-            num_cuota,
-            saldo_inicial,
-            interes,
-            cuota,
-            amortizacion,
-            seguro_desgravamen,
-            seguro_vehicular,
-            seguros_total,
-            saldo_final,
-            flujo_caja_neto,
-            tipo_gracia
-          )
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-          `,
-          [
-            idSimulacion,
-            numero(fila.numeroCuota),
-            numero(fila.saldoInicial),
-            numero(fila.interes),
-            numero(cuotaTotal),
-            numero(fila.amortizacion),
-            numero(fila.seguroDesgravamen),
-            numero(fila.seguroVehicular),
-            numero(segurosTotal),
-            numero(fila.saldoFinal),
-            numero(fila.flujoCajaNeto), 
-            fila.tipoGracia
-          ]
-        );
-      }
+      await connection.execute(
+        `
+        INSERT INTO cronograma_pago (
+          id_simulacion, num_cuota, saldo_inicial, interes, cuota, amortizacion,
+          seguro_desgravamen, seguro_vehicular, seguros_total, saldo_final, flujo_caja_neto, tipo_gracia
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `,
+        [
+          idSimulacion, numero(fila.numeroCuota), numero(fila.saldoInicial), numero(fila.interes),
+          numero(cuotaTotal), numero(fila.amortizacion), numero(fila.seguroDesgravamen),
+          numero(fila.seguroVehicular), numero(segurosTotal), numero(fila.saldoFinal),
+          numero(fila.flujoCajaNeto), fila.tipoGracia
+        ]
+      );
+    }
 
     await connection.commit();
 
     return res.status(201).json({
       exito: true,
-      mensaje: 'Simulación calculada y guardada correctamente',
-      idSimulacion,
-      usuario: {
-        idUsuario: usuario.idUsuario,
-        username: usuario.username,
-        rol: usuario.rol
-      },
-      resumen: {
-        montoPrestamo: resultado.montoPrestamo,
-        montoCuotaFin: resultado.montoCuotaFin,
-        tem: resultado.tem,
-        cuotaMensual: resultado.cuotaMensual,
-        interesTotal: resultado.interesTotal,
-        tcea: resultado.tcea,
-        van: resultado.van,
-        tir: resultado.tir,
-        totalCuotas: resultado.cronograma.length
-      },
-      cronograma: resultado.cronograma 
+      mensaje: 'Simulación guardada correctamente en la base de datos',
+      idSimulacion
     });
 
   } catch (error) {
     await connection.rollback();
-
-    console.error('Error al calcular o guardar la simulación:', error);
-
+    console.error(error);
     return res.status(400).json({
       exito: false,
-      mensaje: 'Error al calcular o guardar la simulación. Verifica los datos enviados.',
+      mensaje: 'Error al calcular o guardar la simulación.',
       error: error instanceof Error ? error.message : 'Error desconocido'
     });
-
   } finally {
     connection.release();
   }
