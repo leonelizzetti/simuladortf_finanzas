@@ -143,34 +143,37 @@ export const listarSimulaciones = async (req: Request, res: Response) => {
 
     let query = `
       SELECT 
-        id_simulacion,
-        id_usuario,
-        fecha_simulacion,
-        moneda,
-        precio_vehiculo,
-        monto_financiar,
-        monto_cuota_final,
-        monto_cuota,
-        tcea,
-        van,
-        tir,
-        tipo_gracia,
-        plazo_meses,
-        estado
-      FROM simulacion_credito
+        s.id_simulacion,
+        s.id_usuario,
+        s.fecha_simulacion,
+        s.moneda,
+        s.precio_vehiculo,
+        s.monto_financiar,
+        s.monto_cuota_final,
+        s.monto_cuota,
+        s.tcea,
+        s.van,
+        s.tir,
+        s.tipo_gracia,
+        s.plazo_meses,
+        s.estado,
+        u.nombres,
+        u.apellidos
+      FROM simulacion_credito s
+      LEFT JOIN usuario u ON s.id_usuario = u.id_usuario
     `;
 
     const valores: any[] = [];
 
     if (usuario.rol === 'CLIENTE') {
       query += `
-        WHERE id_usuario = ?
+        WHERE s.id_usuario = ?
       `;
       valores.push(usuario.idUsuario);
     }
 
     query += `
-      ORDER BY id_simulacion DESC
+      ORDER BY s.id_simulacion DESC
     `;
 
     const [simulaciones]: any = await connection.execute(query, valores);
@@ -281,7 +284,6 @@ export const eliminarSimulacion = async (req: Request, res: Response) => {
 
   try {
     const idSimulacion = Number(req.params.id);
-
     const usuario = (req as any).usuario;
 
     if (isNaN(idSimulacion) || idSimulacion <= 0) {
@@ -295,7 +297,7 @@ export const eliminarSimulacion = async (req: Request, res: Response) => {
 
     const [simulaciones]: any = await connection.execute(
       `
-      SELECT id_simulacion
+      SELECT id_simulacion, id_usuario
       FROM simulacion_credito
       WHERE id_simulacion = ?
       `,
@@ -304,16 +306,16 @@ export const eliminarSimulacion = async (req: Request, res: Response) => {
 
     if (simulaciones.length === 0) {
       await connection.rollback();
-
       return res.status(404).json({
         exito: false,
         mensaje: 'No se encontró la simulación indicada'
       });
     }
 
-    const simulacion = simulaciones[0];
+    const simulacionEncontrada = simulaciones[0];
+    const idDelUsuarioActual = usuario.idUsuario || usuario.idusuario || usuario.id;
 
-    if (usuario.rol === 'CLIENTE' && simulacion.id_usuario !== usuario.idUsuario) {
+    if (usuario.rol === 'CLIENTE' && simulacionEncontrada.id_usuario !== idDelUsuarioActual) {
       await connection.rollback();
       return res.status(403).json({
         exito: false,
@@ -347,15 +349,12 @@ export const eliminarSimulacion = async (req: Request, res: Response) => {
 
   } catch (error) {
     await connection.rollback();
-
     console.error('Error al eliminar la simulación:', error);
-
     return res.status(500).json({
       exito: false,
       mensaje: 'Error al eliminar la simulación',
       error: error instanceof Error ? error.message : 'Error desconocido'
     });
-
   } finally {
     connection.release();
   }
@@ -363,7 +362,7 @@ export const eliminarSimulacion = async (req: Request, res: Response) => {
 
 export const actualizarEstadoSimulacion = async (req: Request, res: Response) => {
     const { id } = req.params;
-    const { estado } = req.body; // 'Aprobado', 'Rechazado', 'Pendiente'
+    const { estado } = req.body; 
     
     try {
         const connection = await pool.getConnection();

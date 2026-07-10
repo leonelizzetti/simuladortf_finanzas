@@ -35,7 +35,6 @@ router.get(
 router.delete(
   '/simulacion/:id',
   verificarToken,
-  verificarRol('ADMINISTRADOR', 'ASESOR', 'CLIENTE'),
   eliminarSimulacion
 );
 
