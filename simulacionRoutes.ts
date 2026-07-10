@@ -3,7 +3,8 @@ import {
   generarSimulacion, 
   eliminarSimulacion,
   listarSimulaciones,
-  obtenerSimulacionPorId
+  obtenerSimulacionPorId,
+  actualizarEstadoSimulacion,
 } from './simulacionController';
 
 import { verificarToken, verificarRol } from './authMiddleware';
@@ -32,10 +33,17 @@ router.get(
 );
 
 router.delete(
-  '/simular/:id',
+  '/simulacion/:id',
   verificarToken,
-  verificarRol('ADMINISTRADOR', 'ASESOR'),
+  verificarRol('ADMINISTRADOR', 'ASESOR', 'CLIENTE'),
   eliminarSimulacion
+);
+
+router.put(
+  '/simulacion/:id/estado', 
+  verificarToken, 
+  verificarRol('ADMINISTRADOR', 'ASESOR'), 
+  actualizarEstadoSimulacion
 );
 
 export default router;

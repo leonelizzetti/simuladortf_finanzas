@@ -68,9 +68,9 @@ export const generarSimulacion = async (req: Request, res: Response) => {
         id_usuario, moneda, precio_vehiculo, porc_cuota_inicial, monto_financiar,
         porc_cuota_final, monto_cuota_final, tipo_tasa, tasa_interes, periodo_capitalizacion,
         plazo_meses, tipo_gracia, meses_gracia_total, meses_gracia_parcial, tasa_desgravamen,
-        seguro_vehicular, cok_anual, tipo_cambio, tem, monto_cuota, interes_total, tcea, van, tir
+        seguro_vehicular, cok_anual, tipo_cambio, tem, monto_cuota, interes_total, tcea, van, tir, estado
       )
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `,
       [
         usuario.idUsuario, moneda, numero(datosEntrada.precioVehiculo), numero(datosEntrada.porcCuotaInicial),
@@ -80,7 +80,7 @@ export const generarSimulacion = async (req: Request, res: Response) => {
         numero(datosEntrada.mesesGraciaPa), numero(datosEntrada.tasaDesgravamen),
         numero(datosEntrada.montoSeguroVehic), numero(datosEntrada.cokAnual), numero(cuerpo.tipoCambio ?? 3.75),
         numero(resultado.tem), numero(resultado.cuotaMensual), numero(resultado.interesTotal),
-        numero(resultado.tcea), numero(resultado.van), numero(resultado.tir)
+        numero(resultado.tcea), numero(resultado.van), numero(resultado.tir), 'Pendiente'
       ]
     );
 
@@ -155,7 +155,8 @@ export const listarSimulaciones = async (req: Request, res: Response) => {
         van,
         tir,
         tipo_gracia,
-        plazo_meses
+        plazo_meses,
+        estado
       FROM simulacion_credito
     `;
 
@@ -281,6 +282,8 @@ export const eliminarSimulacion = async (req: Request, res: Response) => {
   try {
     const idSimulacion = Number(req.params.id);
 
+    const usuario = (req as any).usuario;
+
     if (isNaN(idSimulacion) || idSimulacion <= 0) {
       return res.status(400).json({
         exito: false,
@@ -305,6 +308,16 @@ export const eliminarSimulacion = async (req: Request, res: Response) => {
       return res.status(404).json({
         exito: false,
         mensaje: 'No se encontró la simulación indicada'
+      });
+    }
+
+    const simulacion = simulaciones[0];
+
+    if (usuario.rol === 'CLIENTE' && simulacion.id_usuario !== usuario.idUsuario) {
+      await connection.rollback();
+      return res.status(403).json({
+        exito: false,
+        mensaje: 'Acceso denegado: No tienes permiso para eliminar esta simulación'
       });
     }
 
@@ -346,4 +359,21 @@ export const eliminarSimulacion = async (req: Request, res: Response) => {
   } finally {
     connection.release();
   }
+};
+
+export const actualizarEstadoSimulacion = async (req: Request, res: Response) => {
+    const { id } = req.params;
+    const { estado } = req.body; // 'Aprobado', 'Rechazado', 'Pendiente'
+    
+    try {
+        const connection = await pool.getConnection();
+        await connection.execute(
+            `UPDATE simulacion_credito SET estado = ? WHERE id_simulacion = ?`,
+            [estado, id]
+        );
+        connection.release();
+        return res.status(200).json({ exito: true, mensaje: 'Estado actualizado' });
+    } catch (error) {
+        return res.status(500).json({ exito: false, mensaje: 'Error al actualizar' });
+    }
 };
